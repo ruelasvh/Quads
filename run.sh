@@ -1,3 +1,6 @@
+echo "Removing old frames..."
 rm frames/*
-python main.py $1
+echo "Creating new frames..."
+python3 main.py $1
+echo "Creating gif from new frames..."
 ./gif.sh

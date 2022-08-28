@@ -8,19 +8,26 @@ MODE_ELLIPSE = 2
 MODE_ROUNDED_RECTANGLE = 3
 
 MODE = MODE_RECTANGLE
-ITERATIONS = 1024
+ITERATIONS = 50024
 LEAF_SIZE = 4
-PADDING = 1
+PADDING = 0 # outlines of quadrants, 0=no outline, 1=outline
 FILL_COLOR = (0, 0, 0)
-SAVE_FRAMES = False
+SAVE_FRAMES = True
 ERROR_RATE = 0.5
 AREA_POWER = 0.25
 OUTPUT_SCALE = 1
+REVERSE_FRAMES = True
+
+def div(x, y):
+    try:
+        return x / y
+    except ZeroDivisionError:
+        return 0
 
 def weighted_average(hist):
     total = sum(hist)
-    value = sum(i * x for i, x in enumerate(hist)) / total
-    error = sum(x * (value - i) ** 2 for i, x in enumerate(hist)) / total
+    value = div(sum(i * x for i, x in enumerate(hist)), total)
+    error = div(sum(x * (value - i) ** 2 for i, x in enumerate(hist)), total)
     error = error ** 0.5
     return value, error
 
@@ -29,7 +36,7 @@ def color_from_histogram(hist):
     g, ge = weighted_average(hist[256:512])
     b, be = weighted_average(hist[512:768])
     e = re * 0.2989 + ge * 0.5870 + be * 0.1140
-    return (r, g, b), e
+    return tuple(map(int, (r, g, b))), e
 
 def rounded_rectangle(draw, box, radius, color):
     l, t, r, b = box
@@ -52,6 +59,14 @@ class Quad(object):
         self.leaf = self.is_leaf()
         self.area = self.compute_area()
         self.children = []
+    def __lt__(self, other):
+        return self.depth < other.depth
+    def __le__(self,other):
+        return self.depth <= other.depth
+    def __gt__(self, other):
+        return self.depth > other.depth
+    def __ge__(self, other):
+        return self.depth >= other.depth
     def is_leaf(self):
         l, t, r, b = self.box
         return int(r - l <= LEAF_SIZE or b - t <= LEAF_SIZE)
@@ -126,28 +141,31 @@ class Model(object):
 def main():
     args = sys.argv[1:]
     if len(args) != 1:
-        print 'Usage: python main.py input_image'
+        print('Usage: python main.py input_image')
         return
     model = Model(args[0])
     previous = None
     for i in range(ITERATIONS):
         error = model.average_error()
         if previous is None or previous - error > ERROR_RATE:
-            print i, error
+            print(i, error)
             if SAVE_FRAMES:
-                model.render('frames/%06d.png' % i)
+                if REVERSE_FRAMES:
+                    model.render('frames/%06d.png' % (ITERATIONS - i))
+                else:
+                    model.render('frames/%06d.png' % i)
             previous = error
         model.split()
     model.render('output.png')
-    print '-' * 32
+    print('-' * 32)
     depth = Counter(x.depth for x in model.quads)
     for key in sorted(depth):
         value = depth[key]
         n = 4 ** key
         pct = 100.0 * value / n
-        print '%3d %8d %8d %8.2f%%' % (key, n, value, pct)
-    print '-' * 32
-    print '             %8d %8.2f%%' % (len(model.quads), 100)
+        print('%3d %8d %8d %8.2f%%' % (key, n, value, pct))
+    print('-' * 32)
+    print('             %8d %8.2f%%' % (len(model.quads), 100))
     # for max_depth in range(max(depth.keys()) + 1):
     #     model.render('out%d.png' % max_depth, max_depth)
 
