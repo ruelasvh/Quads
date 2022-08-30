@@ -6,15 +6,16 @@ import sys
 MODE_RECTANGLE = 1
 MODE_ELLIPSE = 2
 MODE_ROUNDED_RECTANGLE = 3
+ITERATIONS_MAX = 50024
 
 MODE = MODE_RECTANGLE
-ITERATIONS = 50024
+ITERATIONS = ITERATIONS_MAX
 LEAF_SIZE = 4
 PADDING = 0 # outlines of quadrants, 0=no outline, 1=outline
 FILL_COLOR = (0, 0, 0)
 SAVE_FRAMES = True
 ERROR_RATE = 0.5
-AREA_POWER = 0.25
+AREA_POWER = 0.95
 OUTPUT_SCALE = 1
 REVERSE_FRAMES = True
 
@@ -35,8 +36,9 @@ def color_from_histogram(hist):
     r, re = weighted_average(hist[:256])
     g, ge = weighted_average(hist[256:512])
     b, be = weighted_average(hist[512:768])
-    e = re * 0.2989 + ge * 0.5870 + be * 0.1140
-    return tuple(map(int, (r, g, b))), e
+    error = re * 0.2989 + ge * 0.5870 + be * 0.1140
+    color = tuple(map(round, (r, g, b)))
+    return color, error
 
 def rounded_rectangle(draw, box, radius, color):
     l, t, r, b = box
@@ -60,13 +62,13 @@ class Quad(object):
         self.area = self.compute_area()
         self.children = []
     def __lt__(self, other):
-        return self.depth < other.depth
+        return self.error < other.error
     def __le__(self,other):
-        return self.depth <= other.depth
+        return self.error <= other.error
     def __gt__(self, other):
-        return self.depth > other.depth
+        return self.error > other.error
     def __ge__(self, other):
-        return self.depth >= other.depth
+        return self.error >= other.error
     def is_leaf(self):
         l, t, r, b = self.box
         return int(r - l <= LEAF_SIZE or b - t <= LEAF_SIZE)
@@ -125,16 +127,21 @@ class Model(object):
         im = Image.new('RGB', (self.width * m + dx, self.height * m + dy))
         draw = ImageDraw.Draw(im)
         draw.rectangle((0, 0, self.width * m, self.height * m), FILL_COLOR)
-        for quad in self.root.get_leaf_nodes(max_depth):
+        nodes = self.root.get_leaf_nodes(max_depth)
+        for i, quad in enumerate(nodes):
             l, t, r, b = quad.box
+            color = quad.color
+            if not any(color):
+                prev_quad = nodes[i - 1]
+                color = prev_quad.color
             box = (l * m + dx, t * m + dy, r * m - 1, b * m - 1)
             if MODE == MODE_ELLIPSE:
-                draw.ellipse(box, quad.color)
+                draw.ellipse(box, color)
             elif MODE == MODE_ROUNDED_RECTANGLE:
                 radius = m * min((r - l), (b - t)) / 4
-                rounded_rectangle(draw, box, radius, quad.color)
+                rounded_rectangle(draw, box, radius, color)
             else:
-                draw.rectangle(box, quad.color)
+                draw.rectangle(box, color)
         del draw
         im.save(path, 'PNG')
 
